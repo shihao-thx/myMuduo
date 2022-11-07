@@ -4,7 +4,11 @@
 #include "muduo/util/noncopyable.h"
 #include "muduo/util/callback.h"
 
+#include <memory>
+
 namespace muduo {
+
+class Timestamp;
 
 namespace net {
 
@@ -21,21 +25,25 @@ namespace net {
  */
 
 class EventLoop;
+//class Timestamp;
 
 class Channel : noncopyable {
  public:
   Channel(EventLoop* loop, int fd);
+  ~Channel();
 
   int fd() const { return fd_; }
   int events() const { return events_; }
   void setRevents(int revt) { revents_ = revt; }
   bool isNoneEvent() const { return events_ == kNoneEvent; }
   // will be called by EventLoop::loop() and do something according to revnets_
-  void handleEvent(); 
+  void handleEvent(Timestamp receiveTime); 
 
-  void setReadCallback(const callback_t<>& rd) { readCallback_ = rd; }
+  void setReadCallback(const callback_t<Timestamp>& rd) { readCallback_ = rd; }
   void setWriteCallback(const callback_t<>& wr) { writeCallback_ = wr; }
   void setErrorCallback(const callback_t<>& err) { errorCallback_ = err; }
+
+  void tie(const std::shared_ptr<void>&);
 
   void enableReading() { events_ |= kReadEvent; update(); }
   void enableWriting() { events_ |= kWriteEvent; update(); }
@@ -47,6 +55,7 @@ class Channel : noncopyable {
   void setIndex(int index) { index_ = index; }
 
   EventLoop* ownerLoop() { return loop_; }
+  void remove();
 
  private:
   // update() -> EventLoop::updateChannel() -> Poller::updateChannel()
@@ -62,7 +71,12 @@ class Channel : noncopyable {
   int revents_; // active event type
   int index_;   // used by Poller
 
-  callback_t<> readCallback_;
+  std::weak_ptr<void> tie_;
+  bool tied_;
+  bool eventHandling_;
+  bool addedToLoop_;
+
+  callback_t<Timestamp> readCallback_;
   callback_t<> writeCallback_;
   callback_t<> errorCallback_;
 
