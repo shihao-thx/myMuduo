@@ -14,7 +14,8 @@ namespace muduo {
 namespace net {
 
 /*-------------------------------Thread Design GUID-----------------------------*\
- * class EventLoopThread is used to create a loop in a thrad
+ * class EventLoopThread is used to create a loop in a thrad. It can create a new
+ * thread. The active channels is being handled. 
  */
 
 class EventLoop;
@@ -35,7 +36,7 @@ class EventLoopThread : noncopyable {
   bool exiting_;
   std::mutex mutex_; 
   std::condition_variable cond_;
-  callback_t<EventLoop*> callback_;
+  callback_t<EventLoop*> threadInitCallback_;
 };
 
 } // namespace net

@@ -3,6 +3,7 @@
 #include "muduo/net/Channel.h"
 #include "muduo/net/EventLoop.h"
 #include "muduo/util/Timestamp.h"
+#include "glog/logging.h"
 
 using namespace muduo;
 using namespace muduo::net;
@@ -22,30 +23,54 @@ void Channel::update() {
   loop_->updateChannel(this);
 } 
 
-// useful
 void Channel::tie(const std::shared_ptr<void>& obj) {
   tie_ = obj;
   tied_ = true;
 }
 
 void Channel::handleEvent(Timestamp receiveTime) {
+  eventHandling_ = true;
   if (revents_ & POLLNVAL) {
-    // TODO: class Logger and self-defined iostream 
-    //std::cout << "WARNING" << std::endl; 
+    // which means epfd is not a valid file descriptor.
+    LOG(WARNING) << "fd = " << fd_ << " Channel:handleEvent() POLLNVAL";
   }
   if (revents_ & (POLLERR | POLLNVAL)) {
     if (errorCallback_) errorCallback_();
   }
+  // POLLRDHUP means connection closed
   if (revents_ & (POLLIN | POLLPRI | POLLRDHUP)) {
     if (readCallback_) readCallback_(receiveTime);
   }
+  // can write
   if (revents_ & POLLOUT) {
     if (writeCallback_) writeCallback_();
   }
-
+  eventHandling_ = false;
 }
 
 void Channel::remove() {
   addedToLoop_ = false;
   loop_->removeChannel(this);
+}
+
+std::string Channel::eventsToString() {
+  std::string strevents;
+  if (events_ & (POLLIN | POLLPRI | POLLRDHUP)) {
+    strevents += " readEvent";
+  }
+  if (events_ & POLLOUT) {
+    strevents += " writeEvent";
+  }
+  return strevents;
+}
+
+const char* Channel::indexToString() {
+  switch (index_) {
+  case -1:
+    return "kNew";
+  case 1:
+    return "kAdded";
+  case 2:
+    return "kDeleted";
+  }
 }

@@ -30,6 +30,7 @@ namespace net {
  * a event including fd, event type, and so on. And read()/write() EventLoop should 
  * have a Channel poll(Map structure) to hold all the registered Channel and we 
  * easily get the Channel through the fd, and then what to do? 
+ * B.T.W. All EventLoops and Threads are created by class EventLoopThread.
  */
 
 class Channel;
@@ -54,7 +55,7 @@ class EventLoop  : public noncopyable {
 
   void queueInLoop(callback_t<> callback);
 
-  size_t queueSize() /* const */;
+  size_t queueSize() const;
 
   void wakeup();
   void updateChannel(Channel* channel);
@@ -80,12 +81,12 @@ class EventLoop  : public noncopyable {
   std::unique_ptr<Poller> poller_;
   // timequeue
   int wakeupFd_;
-  std::unique_ptr<Channel> wakeupChanenl_;
+  std::unique_ptr<Channel> wakeupChanel_;
 
   ChannelList activeChanels_;
   Channel* currentActiveChannel_;
 
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
   std::vector<callback_t<>> pendingFunctors_;
 };
 

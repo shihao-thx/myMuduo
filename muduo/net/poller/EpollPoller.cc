@@ -5,6 +5,8 @@
 
 #include "muduo/net/poller/EpollPoller.h"
 #include "muduo/net/Channel.h"
+#include "muduo/util/Timestamp.h"
+#include "glog/logging.h"
 
 using namespace muduo;
 using namespace muduo::net;
@@ -16,35 +18,36 @@ const int kDeleted = 2;  // deleted
 EpollPoller::EpollPoller(EventLoop* loop) : Poller(loop), 
   epollfd_(::epoll_create(EPOLL_CLOEXEC)), events_(kInitEventListSize) {
   if (epollfd_ < 0) {
-    // TODO LOG
-    std::cout << "Fatal" << std::endl;
+    LOG(FATAL) << "EPollPoller::EpollPoller";
   }
 }
 
 EpollPoller::~EpollPoller() { ::close(epollfd_); }
 
 Timestamp EpollPoller::poll(int timeoutMs, ChannelList* activeChannels) {
-  // TODO: LOG
+  DLOG(INFO) << "fd total count " << channels_.size();
   // return happenning events in events_
+  // The memory area pointed to by events will contain the events that will be 
+  // available for the caller.  Up to maxevents are returned by epoll_wait().  
+  // The maxevents argument must be greater than zero. we initialize maxevents to 16
   int eventsNum = ::epoll_wait(epollfd_, events_.data(), 
     static_cast<int>(events_.size()), timeoutMs);
   int savedErrno = errno;
   Timestamp now(Timestamp::now());
   if (eventsNum > 0) {
-    // TODO: 
+    DLOG(INFO) << eventsNum << " events happened";
     fillActiveChannels(eventsNum, activeChannels);
     if (static_cast<size_t>(eventsNum) == events_.size()) {
       // the size of events_ may limit the eventNum,
       // scale the events_ and the limited events will be handled next time
-      events_.resize(events_.size()*2);
+      events_.resize(events_.size() * 2);
     }
   } else if (eventsNum == 0) {
-    // TODO
-    std::cout << "timeout!" << std::endl;
+    DLOG(INFO) << "nothing happened";
   } else {
     if (savedErrno != EINTR) {
       errno = savedErrno;
-      // TODO
+      LOG(ERROR) << "EPollPoller::poll()";
     }
   }
   return now;
@@ -59,9 +62,9 @@ void EpollPoller::fillActiveChannels(int eventsNum, ChannelList* activeChannels)
 }
 
 void EpollPoller::updateChannel(Channel* channel) {
-  // TODO: assertInLoopthread
   const int index = channel->index();
-  std::cout << "loginfo" << std::endl;
+  DLOG(INFO) << "updateChannel:" << " fd = " << channel->fd() << " events =" 
+             << channel->eventsToString() << " type = " << channel->indexToString();
   int fd = channel->fd();
   if (index == kNew || index == kDeleted) {
     if (index == kNew) {
@@ -71,7 +74,7 @@ void EpollPoller::updateChannel(Channel* channel) {
     }
     channel->setIndex(kAdded);
     update(EPOLL_CTL_ADD, channel); // why we should pass channel
-  } else {    // want to change the type of the event for Channel 
+  } else { // want to change the type of the event for Channel 
     if (channel->isNoneEvent()) {
       update(EPOLL_CTL_DEL, channel);
       channel->setIndex(kDeleted);
@@ -95,16 +98,32 @@ void EpollPoller::removeChannel(Channel* channel) {
 void EpollPoller::update(int operation, Channel* channel) {
   struct epoll_event event;
   bzero(&event, sizeof event);
-  event.events - channel->events();
+  event.events = channel->events();
   event.data.ptr = channel;
-
   int fd = channel->fd();
-  // TODO: log
+
+  DLOG(INFO) << "epoll_ctl op = " << operationToString(operation) << " fd = "
+        << fd << " events =" << channel->eventsToString();
   if (::epoll_ctl(epollfd_, operation, fd, &event) < 0) {
     if (operation == EPOLL_CTL_DEL) {
-      // TODO: Err log
+      LOG(ERROR) << "epoll_ctl op = " << operationToString(operation) << "fd = "
+                 << fd;
     } else {
-      // Fatal log
+      LOG(ERROR) << "epoll_ctl op = " << operationToString(operation) << "fd = "
+                 << fd;
     }
+  }
+}
+
+const char* EpollPoller::operationToString(int op) {
+  switch (op) {
+  case EPOLL_CTL_ADD:
+    return "ADD";
+  case EPOLL_CTL_DEL:
+    return "DEL";
+  case EPOLL_CTL_MOD:
+    return "MOD";
+  default:
+    return "Unknown Operation";
   }
 }

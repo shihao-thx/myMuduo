@@ -2,6 +2,7 @@
 #include "muduo/util/CurrentThread.h"
 #include "muduo/net/poller/EpollPoller.h"
 #include "muduo/net/Channel.h"
+#include "glog/logging.h"
 
 #include <assert.h>
 #include <sys/eventfd.h>
@@ -13,13 +14,12 @@ __thread EventLoop* t_loopInThisThread = nullptr;
 
 const int kPollTimeMs = 10000;
 
-int createEventFd() {
+static int createEventFd() {
   // eventfd() returns a new file descriptor that can be used to refer to 
   // the eventfd object. 
   int evtfd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
   if (evtfd < 0) {
-    // LOG
-    abort();
+    LOG(FATAL) << "Failed in eventfd";
   }
   return evtfd;
 }
@@ -27,22 +27,25 @@ int createEventFd() {
 EventLoop::EventLoop() : looping_(false), threadID_(CurrentThread::tid()),
   quit_(false), eventHandling_(false), callingPendingFunctors_(false), 
   iteration_(0), poller_(Poller::newDefaultPoller(this)), 
-  wakeupFd_(createEventFd()), wakeupChanenl_(new Channel(this, wakeupFd_)), 
+  wakeupFd_(createEventFd()), wakeupChanel_(new Channel(this, wakeupFd_)), 
   currentActiveChannel_(nullptr) {
-  // Log
+  DLOG(INFO) << "EventLoop created " << this << " in thread " << threadID_; 
   if (t_loopInThisThread) {
-    // FATAL
+    LOG(FATAL) << "Another EventLoop " << t_loopInThisThread 
+      << " exists in this thread " << threadID_;
   } else {
     t_loopInThisThread = this;
   }
 
-  wakeupChanenl_->setReadCallback(std::bind(&EventLoop::handleRead, this));
-  wakeupChanenl_->enableReading();
+  wakeupChanel_->setReadCallback(std::bind(&EventLoop::handleRead, this));
+  wakeupChanel_->enableReading(); // always read the wakeupFd
 }
 
 EventLoop::~EventLoop() {
-  wakeupChanenl_->disableAll();
-  wakeupChanenl_->remove();
+  DLOG(INFO) << "EventLoop " << this << " of thread " << threadID_ 
+    << "destructs in thread " << CurrentThread::tid();
+  wakeupChanel_->disableAll();
+  wakeupChanel_->remove();
   ::close(wakeupFd_);
   t_loopInThisThread = nullptr;
 }
@@ -50,7 +53,7 @@ EventLoop::~EventLoop() {
 void EventLoop::loop() {
   looping_ = true;
   quit_ = false;
-
+  DLOG(INFO) << "EventLoop " << this << " start looping";
   while (!quit_) {
     activeChanels_.clear();
     pollReturnTime_ = poller_->poll(kPollTimeMs, &activeChanels_);
@@ -68,15 +71,19 @@ void EventLoop::loop() {
     // 
     doPendingFunctors();
   }
+  DLOG(INFO) << "EventLoop " << this << " stop looping";
+  looping_ = false;
 }
 
-// useful?
+// to run callbacks in waiting queue
 void EventLoop::doPendingFunctors() {
   std::vector<callback_t<>> functors;
   callingPendingFunctors_ = true;
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    // good design: all elements in pendingFunctors_ thansfer to tempt functors
+    // so that memory pengdingFunctors_ occupied can be released
     functors.swap(pendingFunctors_);
   }
 
@@ -94,11 +101,12 @@ void EventLoop::queueInLoop(callback_t<> callback) {
   }
 
   if (!isInLoopThread() || callingPendingFunctors_) {
-    wakeup();
+    wakeup();  
   }
 } 
 
-size_t EventLoop::queueSize() /* const */ {
+size_t EventLoop::queueSize() const {
+  // mutex_ needs to be mutable
   std::lock_guard<std::mutex> lock(mutex_);
   return pendingFunctors_.size();
 }
@@ -107,30 +115,34 @@ void EventLoop::runInLoop(callback_t<> callback) {
   if (isInLoopThread()) {
     callback();
   } else {
-    queueInLoop(std::move(callback)); // why into queue
+    // Thread ID of the eventLoop != thread ID of running callback()
+    // ensure callback to be called in subloop rather than mainloop.
+    // Usually use queueInLoop when accepting a new connection.
+    queueInLoop(std::move(callback));
   }
 }
 
 void EventLoop::quit() {
   quit_ = true;
-  if (isInLoopThread()) {
+  if (!isInLoopThread()) {
     wakeup();
   }
 }
 
+// the EventLoop thread maybe sleeping due to epoll_wait
 void EventLoop::wakeup() {
-  uint64_t one = 1;
-  ssize_t n = write(wakeupFd_, &one, sizeof one);
+  uint64_t one = 1; // one byte
+  ssize_t n = ::write(wakeupFd_, &one, sizeof one);
   if (n != sizeof one) {
-    // LOG error
+    LOG(ERROR) << "EventLoop::wakeup() writes " << n << " bytes instead of 8";
   }
 }
 
 void EventLoop::handleRead() {
   uint64_t one = 1;
-  ssize_t n = read(wakeupFd_, &one, sizeof one);
+  ssize_t n = ::read(wakeupFd_, &one, sizeof one);
   if (n != sizeof one) {
-    // LOG error
+    LOG(ERROR) << "EventLoop::handleRead() reads " << n << " bytes instead of 8";
   }
 }
 

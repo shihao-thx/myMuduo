@@ -6,7 +6,7 @@ using namespace muduo::net;
 EventLoopThread::EventLoopThread(const callback_t<EventLoop*> threadInit, 
                                 const std::string& name) : loop_(nullptr),
   exiting_(false), thread_(std::bind(&EventLoopThread::threadFunc, this), name),
-  /* mutex_() */ cond_(), callback_(threadInit) {}
+  /* mutex_() */ cond_(), threadInitCallback_(threadInit) {}
 
 EventLoopThread::~EventLoopThread() {
   exiting_ = true;
@@ -22,10 +22,12 @@ EventLoop* EventLoopThread::startLoop() {
 
   EventLoop* loop = nullptr;
   {
-    //std::lock_guard<std::mutex> lock(mutex_);
-    std::unique_lock<std::mutex> lock(mutex_);
-    // wait Loop is already created 
-    while (!loop_) { // why need while to wait
+    // std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_); // dead lock? nope.
+    // wait Loop is already created
+    // why need while to wait? --avoid spurious wakeup
+    while (!loop_) {
+      // wait will release the lock
       cond_.wait(lock); 
     }
     loop = loop_;
@@ -35,17 +37,20 @@ EventLoop* EventLoopThread::startLoop() {
 
 void EventLoopThread::threadFunc() {
   EventLoop loop;
-  if (callback_) {
-    callback_(&loop);
+  if (threadInitCallback_) {
+    threadInitCallback_(&loop);
   }
 
   {
+    // nessary to add lock here? because already have cond_
+    // it's nessary, because the below lock ensure above conn_.wait can be notified
+    // good desgin!
     std::lock_guard<std::mutex> lock(mutex_);
     loop_  = &loop;
     cond_.notify_one(); // notify startLoop func can exit
   }
 
-  loop.loop();
+  loop.loop(); // dead while
   std::lock_guard<std::mutex> lock(mutex_);
   loop_ = nullptr;
 }

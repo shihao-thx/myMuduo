@@ -16,7 +16,7 @@ namespace muduo {
 
 class Thread : noncopyable {
  public:
-  explicit Thread(callback_t<>, const std::string& name = std::string());
+  explicit Thread(callback_t<>, const std::string& name = "");
   // FIXME: make it movable in c++11
   // cann't copy but can move
   ~Thread();
@@ -34,7 +34,7 @@ class Thread : noncopyable {
   bool started_;
   bool joined_;
   std::shared_ptr<std::thread> thread_;
-  callback_t<> func_;
+  callback_t<> threadFunc_;
   std::string name_;
   std::atomic<int> num_;
   pid_t tid_;

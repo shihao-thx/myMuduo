@@ -25,7 +25,7 @@ namespace net {
  */
 
 class EventLoop;
-//class Timestamp;
+// class Timestamp;
 
 class Channel : noncopyable {
  public:
@@ -34,24 +34,31 @@ class Channel : noncopyable {
 
   int fd() const { return fd_; }
   int events() const { return events_; }
-  void setRevents(int revt) { revents_ = revt; }
+  std::string eventsToString();
+  void setRevents(int revents) { revents_ = revents; }
   bool isNoneEvent() const { return events_ == kNoneEvent; }
   // will be called by EventLoop::loop() and do something according to revnets_
+  // currentActiveChannel_->handleEvent()
   void handleEvent(Timestamp receiveTime); 
 
   void setReadCallback(const callback_t<Timestamp>& rd) { readCallback_ = rd; }
   void setWriteCallback(const callback_t<>& wr) { writeCallback_ = wr; }
+  void setCloseCallback(const callback_t<>& cl) { closeCallback_ = cl; }
   void setErrorCallback(const callback_t<>& err) { errorCallback_ = err; }
-
+  // std::weak_ptr<void> tie_ to probe TcpConnection is still alive
   void tie(const std::shared_ptr<void>&);
 
   void enableReading() { events_ |= kReadEvent; update(); }
   void enableWriting() { events_ |= kWriteEvent; update(); }
   void disableReading() { events_ &= ~kReadEvent; update(); }
+  void disableWriting() { events_ &= ~kWriteEvent; update(); }
   void disableAll() { events_ = kNoneEvent; update(); }
+  bool isWriting() const { return events_ & kWriteEvent; }
+  bool isReading() const { return events_ & kReadEvent; }
 
   // for Poller
   int index() { return index_; }
+  const char* indexToString();
   void setIndex(int index) { index_ = index; }
 
   EventLoop* ownerLoop() { return loop_; }
@@ -78,8 +85,8 @@ class Channel : noncopyable {
 
   callback_t<Timestamp> readCallback_;
   callback_t<> writeCallback_;
+  callback_t<> closeCallback_;
   callback_t<> errorCallback_;
-
 };
 
 } // namespace net

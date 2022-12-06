@@ -13,7 +13,8 @@ namespace muduo {
 namespace net {
 
 /*-------------------------------Thread Design GUID-----------------------------*\
- * class EventLoopThread is used to manage EventLoop.
+ * class EventLoopThreadPool is used to manage EventLoopThread. It's created by
+ * class TcpServer.
  */
 
 class EventLoop;
@@ -21,10 +22,10 @@ class EventLoopThread;
 
 class EventLoopThreadPool : noncopyable {
  public:
-  EventLoopThreadPool(EventLoop* baseLoop, const std::string& nameArg);
+  EventLoopThreadPool(EventLoop* mainLoop, const std::string& nameArg);
   ~EventLoopThreadPool();
   void setThreadNum(int numThreads) { numThreads_  = numThreads; }
-  void start(const callback_t<EventLoop*> threadInit/* = callback_t<>() */); // TODO
+  void start(const callback_t<EventLoop*> threadInit = callback_t<EventLoop*>());
 
   // round-robin to distribute channel to Loop 
   EventLoop* getNextLoop();
@@ -34,7 +35,7 @@ class EventLoopThreadPool : noncopyable {
   const std::string& name() const { return name_; } 
 
  private:
-  EventLoop* baseLoop_;
+  EventLoop* mainLoop_;
   std::string name_;
   bool started_;
   int numThreads_;

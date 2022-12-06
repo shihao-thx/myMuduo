@@ -6,22 +6,24 @@
 namespace muduo {
 
 namespace net {
+   
 
 class EpollPoller : public Poller {
  public:
   EpollPoller(EventLoop* loop);
   ~EpollPoller() override;
 
+  // called in EventLoop
   Timestamp poll(int timeoutMs, ChannelList* activeChannel) override;
 
   void updateChannel(Channel* channel) override;
 
   void removeChannel(Channel* channel) override;
  
-  bool hasChannel(Channel* channel) const override;
- 
   private:
    static const int kInitEventListSize = 16;
+
+   static const char* operationToString(int op);
 
    void fillActiveChannels(int numEvents, ChannelList* activeChannels) const;
 
